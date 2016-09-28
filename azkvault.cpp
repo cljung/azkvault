@@ -54,7 +54,8 @@ class KeyVaultClient
     bool GetSecretValue( utility::string_t secretName, web::json::value& secret );
 };
 //////////////////////////////////////////////////////////////////////////////
-//
+// helper to generate a new guid (currently Linux specific, for Windows we 
+// should use ::CoCreateGuid() 
 utility::string_t KeyVaultClient::NewGuid()
 {
     uuid_t uuid;
@@ -65,7 +66,7 @@ utility::string_t KeyVaultClient::NewGuid()
     return guid;  
 }
 //////////////////////////////////////////////////////////////////////////////
-//
+// Call Azure KeyVault REST API to retrieve a secret
 bool KeyVaultClient::GetSecretValue( utility::string_t secretName, web::json::value& secret )
 {
     get_secret( secretName ).wait();
@@ -102,7 +103,7 @@ pplx::task<void> KeyVaultClient::get_secret( utility::string_t secretName )
 }
  
 //////////////////////////////////////////////////////////////////////////////
-//
+// helper to parse out https url in double quotes
 utility::string_t KeyVaultClient::get_https_url( utility::string_t headerValue )
 { 
   size_t pos1 = headerValue.find("https://");
@@ -119,7 +120,8 @@ utility::string_t KeyVaultClient::get_https_url( utility::string_t headerValue )
   return headerValue;
 }
 //////////////////////////////////////////////////////////////////////////////
-//
+// Make a HTTP POST to oauth2 IDP source to get JWT Token containing
+// access token & token type
 pplx::task<void> KeyVaultClient::Authenticate( utility::string_t& clientId, utility::string_t& clientSecret, utility::string_t& keyVaultName )
 {
     auto impl = this;
@@ -159,7 +161,8 @@ pplx::task<void> KeyVaultClient::Authenticate( utility::string_t& clientId, util
     });
 }
 //////////////////////////////////////////////////////////////////////////////
-//
+// Make a HTTP Get to Azure KeyVault unauthorized which gets us a response 
+// where the header contains the url of IDP to be used
 pplx::task<void> KeyVaultClient::GetLoginUrl()
 {
     auto impl = this;
@@ -192,7 +195,7 @@ pplx::task<void> KeyVaultClient::GetLoginUrl()
     });
 }
 //////////////////////////////////////////////////////////////////////////////
-//
+// Read configFile where each line is in format key=value
 void GetConfig(std::string configFile)
 {
   std::ifstream fin(configFile);
