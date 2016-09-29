@@ -5,13 +5,14 @@ Microsoft has a <a href="https://github.com/Azure/azure-storage-cpp" target="_bl
 However, it only implements support for storage which means you have to implement the rest yourself using the REST APIs.
 
 ## Azure KeyVault secrets
-In Azure KeyVault you can store certificates and secrets, which can be sensitive data, like userids and passwords. If you don't want to sensitive data in config files, perhaps because it is a remote device in a not entirely safe place, storing it as a secret in key vault and retrieving it at runtime can be a better solution.
+In Azure KeyVault you can store certificates and secrets. Secrets can be sensitive data in plain text, like userids and passwords, or whatever you like. If you don't want to sensitive data in config files, perhaps because it is a remote device in a not entirely safe place, storing it as a secret in key vault and retrieving it at runtime can be a better solution. 
+The benefit of using KeyVault secrets is that if you need to update connection strings, you only have to do it in KeyVault and not in all (remote?) places you have config files.
 
 In order to retrieve secrets you first need to Authenticate with Azure AD. The Key Vault REST API is kind enough to pass the url of its OAuth endpoint in the HTTP Response if you make an unauthorized HTTP Request. This sample code takes advantage of that and does the following:
 
 1. Makes a HTTP GET to your KeyVault endpoint asking for a bogus secret
 2. Grab the OAuth endpoint in the header of the Response
-3. Makes a HTTP POST to the OAuth endpoint with a clientId and clientSecret value proving it's a legimimate application
+3. Makes a HTTP POST to the OAuth endpoint with a clientId and clientSecret value proving it's a legitimate application
 4. Saves the JWT Token returned on successfull login
 5. Makes subsequent HTTP GET requests to Azure's KeyVault REST API to retrieve secrets
 
@@ -32,13 +33,15 @@ You should grab the values in the Azure Portal and paste them in the file.
 
 ## Building the sample on Linux
 Building this sample on an Ubuntu Linux is explanied in the README.md in <a href="https://github.com/Azure/azure-storage-cpp" target="_blank">azure-storage-cpp</a> github.
-You need to git clone and build something called Casablanca and azure-storage-cpp. Casablanca is a C++ REST API client implementation by Microsoft which helps you build clients for any REST based solution. You will find Casablanca referenced from azure-storage-cpp.
+You need to git clone and build something called <a href="https://github.com/microsoft/cpprestsdk">Casablanca and azure-storage-cpp</a>. Casablanca is a C++ REST API client implementation by Microsoft which helps you build clients for any REST based solution. You will find Casablanca referenced from azure-storage-cpp.
 WARNING - the instructions for some reason builds Casablanca as a debug build and azure-storage-cpp as a release build. I did a pure release build of them both.
 
-In order to build and run this sample, you need to modify the makefile in one or perhaps two places. The ROOTDIR variable is the parent folder to azkvault, Casablanca and azure-storage-cpp.
+In order to build and run this sample, you need to make sure that the ROOTDIR definition is currect. The ROOTDIR variable is the parent folder to azkvault, Casablanca and azure-storage-cpp.
+The makefile grabs the parent folder of the current folder and uses as ROOTDIR.
 <pre>
 <code>
-ROOTDIR=/home/cljung/cpp
+PWD=$(shell pwd)
+ROOTDIR=$(shell dirname $(PWD))
 </code>
 </pre>
 Depending on what you call the folders for your Casablanca and azure-storage-cpp builds you may need to change the CASABLANCA_BINDIR and the AZURECPP_BINDIR too. I called them build.release
