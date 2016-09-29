@@ -19,7 +19,7 @@ RDYNAMIC=$(AZURECPP_BINDIR)/libazurestorage.so $(CASABLANCA_BINDIR)/libcpprest.s
 all:	app
 
 $(TARGET).o: $(TARGET).cpp 
-	$(CC) $(DEFS) $(INC) $(TARGET).cpp -o $(TARGET) $(LIB1) $(STDLIBS) $(DYNLIBS) -rdynamic $(RDYNAMIC) -Wl,-rpath,$(AZURECPP_BINDIR):$(CASABLANCA_BINDIR)
+	$(CC) $(DEFS) $(INC) $(TARGET).cpp -o $(TARGET) $(LIB1) $(STDLIBS) -rdynamic $(RDYNAMIC) -Wl,-rpath,$(AZURECPP_BINDIR):$(CASABLANCA_BINDIR)
 	chmod +x $(TARGET)
 
 app: $(TARGET).o
