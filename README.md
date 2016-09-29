@@ -11,7 +11,7 @@ In order to retrieve secrets you first need to Authenticate with Azure AD. The K
 
 1. Makes a HTTP GET to your KeyVault endpoint asking for a bogus secret
 2. Grab the OAuth endpoint in the header of the Response
-3. Makes a HTTP POST to the OAuth endpoint with a clientId and clientSecret value proving it's a legimimate application
+3. Makes a HTTP POST to the OAuth endpoint with a clientId and clientSecret value proving it's a legitimate application
 4. Saves the JWT Token returned on successfull login
 5. Makes subsequent HTTP GET requests to Azure's KeyVault REST API to retrieve secrets
 
@@ -35,10 +35,12 @@ Building this sample on an Ubuntu Linux is explanied in the README.md in <a href
 You need to git clone and build something called Casablanca and azure-storage-cpp. Casablanca is a C++ REST API client implementation by Microsoft which helps you build clients for any REST based solution. You will find Casablanca referenced from azure-storage-cpp.
 WARNING - the instructions for some reason builds Casablanca as a debug build and azure-storage-cpp as a release build. I did a pure release build of them both.
 
-In order to build and run this sample, you need to modify the makefile in one or perhaps two places. The ROOTDIR variable is the parent folder to azkvault, Casablanca and azure-storage-cpp.
+In order to build and run this sample, you need to make sure that the ROOTDIR definition is currect. The ROOTDIR variable is the parent folder to azkvault, Casablanca and azure-storage-cpp.
+The makefile grabs the parent folder of the current folder and uses as ROOTDIR.
 <pre>
 <code>
-ROOTDIR=/home/cljung/cpp
+PWD=$(shell pwd)
+ROOTDIR=$(shell dirname $(PWD))
 </code>
 </pre>
 Depending on what you call the folders for your Casablanca and azure-storage-cpp builds you may need to change the CASABLANCA_BINDIR and the AZURECPP_BINDIR too. I called them build.release
