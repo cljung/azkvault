@@ -1,8 +1,13 @@
 // basic-http-client.cpp
 #include <iostream>
 #include <sstream>
+#ifdef _WIN32
+#include <time.h>
+#include <objbase.h>
+#else
 #include <sys/time.h>
 #include <uuid/uuid.h>
+#endif
 
 #include "cpprest/details/basic_types.h"
 #include "cpprest/http_client.h"
@@ -21,10 +26,10 @@ using namespace web::http::client;
 using namespace concurrency::streams;
 
 // globals
-utility::string_t clientId = "";
-utility::string_t clientSecret = "";
-utility::string_t keyVaultName = "";
-utility::string_t blobContainer = "";
+utility::string_t clientId = _XPLATSTR("");
+utility::string_t clientSecret = _XPLATSTR("");
+utility::string_t keyVaultName = _XPLATSTR("");
+utility::string_t blobContainer = _XPLATSTR("");
 bool verbose = false;
 //////////////////////////////////////////////////////////////////////////////
 //
@@ -58,12 +63,20 @@ class KeyVaultClient
 // should use ::CoCreateGuid() 
 utility::string_t KeyVaultClient::NewGuid()
 {
-    uuid_t uuid;
-    uuid_generate_time_safe(uuid);
-    char uuid_str[37];
-    uuid_unparse_lower(uuid, uuid_str);
-    utility::string_t guid = uuid_str;
-    return guid;  
+	utility::string_t guid;
+#ifdef _WIN32
+	GUID wguid;
+	::CoCreateGuid(&wguid);
+	wchar_t		uuid_str[38 + 1];
+	::StringFromGUID2((const GUID&)wguid, uuid_str, sizeof(uuid_str));
+#else
+	uuid_t uuid;
+	uuid_generate_time_safe(uuid);
+	char uuid_str[37];
+	uuid_unparse_lower(uuid, uuid_str);
+#endif
+	guid = uuid_str;
+	return guid;
 }
 //////////////////////////////////////////////////////////////////////////////
 // Call Azure KeyVault REST API to retrieve a secret
@@ -77,13 +90,13 @@ pplx::task<void> KeyVaultClient::get_secret( utility::string_t secretName )
 {
     auto impl = this;
     // create the url path to query the keyvault secret
-    utility::string_t url = "https://" + impl->keyVaultName + ".vault.azure.net/secrets/" + secretName + "?api-version=2015-06-01";
+    utility::string_t url = _XPLATSTR("https://") + impl->keyVaultName + _XPLATSTR(".vault.azure.net/secrets/") + secretName + _XPLATSTR("?api-version=2015-06-01");
     http_client client( url ); 
     http_request request(methods::GET);
-    request.headers().add("Accept", "application/json");   
-    request.headers().add("client-request-id", NewGuid() );
+    request.headers().add(_XPLATSTR("Accept"), _XPLATSTR("application/json"));
+    request.headers().add(_XPLATSTR("client-request-id"), NewGuid() );
     // add access token we got from authentication step
-    request.headers().add("Authorization", impl->tokenType + " " + impl->accessToken );
+    request.headers().add(_XPLATSTR("Authorization"), impl->tokenType + _XPLATSTR(" ") + impl->accessToken );
     // Azure HTTP REST API call
     return client.request(request).then([impl](http_response response)
     {
@@ -91,12 +104,16 @@ pplx::task<void> KeyVaultClient::get_secret( utility::string_t secretName )
       impl->status_code = response.status_code();
       if ( impl->status_code == 200 ) {
          auto bodyStream = response.body();
+#ifdef _WIN32
+         concurrency::streams::wstringstreambuf sbuffer;
+#else
          concurrency::streams::stringstreambuf sbuffer;
+#endif
          auto& target = sbuffer.collection();
          bodyStream.read_to_end(sbuffer).get();
          impl->secret = web::json::value::parse( target.c_str(), err );
       } else {
-        utility::string_t empty = "{\"id\":\"\",\"value\":\"\"}";
+        utility::string_t empty = _XPLATSTR("{\"id\":\"\",\"value\":\"\"}");
         impl->secret = web::json::value::parse( empty.c_str(), err );
       }
     });
@@ -106,9 +123,9 @@ pplx::task<void> KeyVaultClient::get_secret( utility::string_t secretName )
 // helper to parse out https url in double quotes
 utility::string_t KeyVaultClient::get_https_url( utility::string_t headerValue )
 { 
-  size_t pos1 = headerValue.find("https://");
+  size_t pos1 = headerValue.find(_XPLATSTR("https://"));
   if ( pos1 >= 0 ) {
-     size_t pos2 = headerValue.find("\"", pos1+1);
+     size_t pos2 = headerValue.find(_XPLATSTR("\""), pos1+1);
      if ( pos2 > pos1 ) {
         utility::string_t url = headerValue.substr(pos1, pos2-pos1);
         headerValue = url;
@@ -131,15 +148,15 @@ pplx::task<void> KeyVaultClient::Authenticate( utility::string_t& clientId, util
     impl->GetLoginUrl().wait();
 
     // create the oauth2 authentication request and pass the clientId/Secret as app identifiers
-    utility::string_t url = impl->loginUrl + "/oauth2/token";
+    utility::string_t url = impl->loginUrl + _XPLATSTR("/oauth2/token");
     http_client client( url ); 
-    utility::string_t postData = "resource=" + uri::encode_uri( impl->resourceUrl ) + "&client_id=" + clientId
-                               + "&client_secret=" + clientSecret + "&grant_type=client_credentials";
+    utility::string_t postData = _XPLATSTR("resource=") + uri::encode_uri( impl->resourceUrl ) + _XPLATSTR("&client_id=") + clientId
+                               + _XPLATSTR("&client_secret=") + clientSecret + _XPLATSTR("&grant_type=client_credentials");
     http_request request(methods::POST);
-    request.headers().add("Content-Type", "application/x-www-form-urlencoded");
-    request.headers().add("Accept", "application/json");   
-    request.headers().add("return-client-request-id", "true");   
-    request.headers().add("client-request-id", NewGuid() );
+    request.headers().add(_XPLATSTR("Content-Type"), _XPLATSTR("application/x-www-form-urlencoded"));
+    request.headers().add(_XPLATSTR("Accept"), _XPLATSTR("application/json"));
+    request.headers().add(_XPLATSTR("return-client-request-id"), _XPLATSTR("true"));
+    request.headers().add(_XPLATSTR("client-request-id"), NewGuid() );
     request.set_body( postData );
     // response from IDP is a JWT Token that contains the token type and access token we need for
     // Azure HTTP REST API calls
@@ -148,14 +165,18 @@ pplx::task<void> KeyVaultClient::Authenticate( utility::string_t& clientId, util
         impl->status_code = response.status_code();
         if ( impl->status_code == 200 ) {
            auto bodyStream = response.body();
+#ifdef _WIN32
+           concurrency::streams::wstringstreambuf sbuffer;
+#else
            concurrency::streams::stringstreambuf sbuffer;
+#endif
            auto& target = sbuffer.collection();
            bodyStream.read_to_end(sbuffer).get();
            std::error_code err;
            web::json::value jwtToken = web::json::value::parse( target.c_str(), err );
            if ( err.value() == 0 ) {
-              impl->tokenType = jwtToken["token_type"].as_string();
-              impl->accessToken = jwtToken["access_token"].as_string();
+              impl->tokenType = jwtToken[_XPLATSTR("token_type")].as_string();
+              impl->accessToken = jwtToken[_XPLATSTR("access_token")].as_string();
           }
        }
     });
@@ -166,18 +187,18 @@ pplx::task<void> KeyVaultClient::Authenticate( utility::string_t& clientId, util
 pplx::task<void> KeyVaultClient::GetLoginUrl()
 {
     auto impl = this;
-    utility::string_t url = "https://" + impl->keyVaultName + ".vault.azure.net/secrets/secretname?api-version=2015-06-01";
+    utility::string_t url = _XPLATSTR("https://") + impl->keyVaultName + _XPLATSTR(".vault.azure.net/secrets/secretname?api-version=2015-06-01");
     http_client client( url ); 
     return client.request(methods::GET).then([impl](http_response response)
     {
         impl->status_code = response.status_code();
         if ( impl->status_code == 401 ) {
            web::http::http_headers& headers = response.headers();
-           impl->keyVaultRegion = headers["x-ms-keyvault-region"];
-           const utility::string_t& wwwAuth = headers["WWW-Authenticate"];
+           impl->keyVaultRegion = headers[_XPLATSTR("x-ms-keyvault-region")];
+           const utility::string_t& wwwAuth = headers[_XPLATSTR("WWW-Authenticate")];
            // parse WWW-Authenticate header into url links. Format:
            // Bearer authenticate="url", resource="url"
-           utility::string_t delimiter = " ";
+           utility::string_t delimiter = _XPLATSTR(" ");
            size_t count = 0, start = 0, end = wwwAuth.find(delimiter);
            while (end != utility::string_t::npos)
            {
@@ -196,30 +217,30 @@ pplx::task<void> KeyVaultClient::GetLoginUrl()
 }
 //////////////////////////////////////////////////////////////////////////////
 // Read configFile where each line is in format key=value
-void GetConfig(std::string configFile)
+void GetConfig(utility::string_t configFile)
 {
-  std::ifstream fin(configFile);
-  std::string line;
-  std::istringstream sin;
-  std::string val;
+  utility::ifstream_t fin(configFile);
+  utility::string_t line;
+  utility::istringstream_t sin;
+  utility::string_t val;
 
   while (std::getline(fin, line)) {
-    sin.str(line.substr(line.find("=")+1));
+    sin.str(line.substr(line.find(_XPLATSTR("="))+1));
     sin >> val;
-    if (line.find("keyVaultName") != std::string::npos) {
+    if (line.find(_XPLATSTR("keyVaultName")) != std::string::npos) {
       keyVaultName = val;
     }
-    else if (line.find("clientId") != std::string::npos) {
+    else if (line.find(_XPLATSTR("clientId")) != std::string::npos) {
       clientId = val;
     }
-    else if (line.find("clientSecret") != std::string::npos) {
+    else if (line.find(_XPLATSTR("clientSecret")) != std::string::npos) {
       clientSecret = val;
     }
-    else if (line.find("blobContainer") != std::string::npos) {
+    else if (line.find(_XPLATSTR("blobContainer")) != std::string::npos) {
       blobContainer = val;
     }
-    else if (line.find("verbose") != std::string::npos) {
-      if (val.find("true") != std::string::npos) {
+    else if (line.find(_XPLATSTR("verbose")) != std::string::npos) {
+      if (val.find(_XPLATSTR("true")) != std::string::npos) {
         verbose = true;
       }
     }
@@ -228,16 +249,20 @@ void GetConfig(std::string configFile)
 }
 //////////////////////////////////////////////////////////////////////////////
 //
+#ifdef _WIN32
+int main(int argc, wchar_t* argv[])
+#else
 int main(int argc, char* argv[])
+#endif
 {
     if ( argc < 2 ) {
-       std::wcout << "syntax: azkvault secretname [localfile blobname]" << std::endl;
+       std::wcout << _XPLATSTR("syntax: azkvault secretname [localfile blobname]") << std::endl;
     }
 
     KeyVaultClient kvc;
     utility::string_t secretName = argv[1];
-    utility::string_t fileName = "";
-    utility::string_t blobName = "";
+    utility::string_t fileName = _XPLATSTR("");
+    utility::string_t blobName = _XPLATSTR("");
 
     if ( argc >= 4 ) {
        fileName = argv[2];
@@ -246,45 +271,45 @@ int main(int argc, char* argv[])
 
     /////////////////////////////////////////////////////////////////////////
     // load values from config file
-    GetConfig("azkvault.conf");
+    GetConfig(_XPLATSTR("azkvault.conf"));
 
     /////////////////////////////////////////////////////////////////////////
     // Authenticate with Azure AD
-    std::wcout << "Authenticating for KeyVault " << keyVaultName.c_str() << "..." << std::endl;
-    std::wcout << "clientId : " << clientId.c_str() << "..." << std::endl;
+    std::wcout << _XPLATSTR("Authenticating for KeyVault ") << keyVaultName.c_str() << _XPLATSTR("...") << std::endl;
+    std::wcout << _XPLATSTR("clientId : ") << clientId.c_str() << _XPLATSTR("...") << std::endl;
 
     kvc.Authenticate( clientId, clientSecret, keyVaultName ).wait();
 
     if ( verbose ) {
-       std::wcout << "Azure Region: " << kvc.keyVaultRegion.c_str() << std::endl;
-       std::wcout << "ResourceUrl : " << kvc.resourceUrl.c_str() << std::endl;
-       std::wcout << "LoginUrl    : " << kvc.loginUrl.c_str() << std::endl;
-       std::wcout << kvc.tokenType.c_str() << " " << kvc.accessToken.c_str() << std::endl;
+       std::wcout << _XPLATSTR("Azure Region: ") << kvc.keyVaultRegion.c_str() << std::endl;
+       std::wcout << _XPLATSTR("ResourceUrl : ") << kvc.resourceUrl.c_str() << std::endl;
+       std::wcout << _XPLATSTR("LoginUrl    : ") << kvc.loginUrl.c_str() << std::endl;
+       std::wcout << kvc.tokenType.c_str() << _XPLATSTR(" ") << kvc.accessToken.c_str() << std::endl;
     }
 
     /////////////////////////////////////////////////////////////////////////
     // Get Azure KeyVault secret
-    std::wcout << "Querying KeyVault Secret " << secretName.c_str() << "..." << std::endl;
+    std::wcout << _XPLATSTR("Querying KeyVault Secret ") << secretName.c_str() << _XPLATSTR("...") << std::endl;
     web::json::value jsonSecret;
     bool rc = kvc.GetSecretValue( secretName, jsonSecret );
 
     if ( rc == false ) {
-       std::wcout << "Secret doesn't exist" << std::endl;
+       std::wcout << _XPLATSTR("Secret doesn't exist") << std::endl;
        return 1;
     }
-    std::wcout << "Secret ID   : " << jsonSecret["id"].as_string().c_str() << std::endl;
-    std::wcout << "Secret Value: " << jsonSecret["value"].as_string().c_str() << std::endl;
+    std::wcout << _XPLATSTR("Secret ID   : ") << jsonSecret[_XPLATSTR("id")].as_string().c_str() << std::endl;
+    std::wcout << _XPLATSTR("Secret Value: ") << jsonSecret[_XPLATSTR("value")].as_string().c_str() << std::endl;
 
     /////////////////////////////////////////////////////////////////////////
     // Upload file to blob container
 
     try {
       // Initialize Storage Account from KeyVault secret, which holds the connect string
-      utility::string_t storage_connection_string = jsonSecret["value"].as_string();
+      utility::string_t storage_connection_string = jsonSecret[_XPLATSTR("value")].as_string();
       azure::storage::cloud_storage_account storage_account = azure::storage::cloud_storage_account::parse( storage_connection_string );
 
       // get container ref
-      std::wcout << "Using Blob Container: " <<  blobContainer.c_str() << std::endl;
+      std::wcout << _XPLATSTR("Using Blob Container: ") <<  blobContainer.c_str() << std::endl;
       azure::storage::cloud_blob_client blob_client = storage_account.create_cloud_blob_client();
       azure::storage::cloud_blob_container container = blob_client.get_container_reference( blobContainer );
       container.create_if_not_exists();
@@ -292,7 +317,7 @@ int main(int argc, char* argv[])
       time_t t = time(NULL);
       struct tm * curtime = localtime( &t );
       // upload file
-      std::wcout << asctime(curtime) << ": Uploading file " <<  fileName.c_str() << std::endl;
+      std::wcout << asctime(curtime) << _XPLATSTR(": Uploading file ") <<  fileName.c_str() << std::endl;
 
       concurrency::streams::istream input_stream = concurrency::streams::file_stream<uint8_t>::open_istream( fileName ).get();
       azure::storage::cloud_block_blob blob1 = container.get_block_blob_reference( blobName );
@@ -301,10 +326,10 @@ int main(int argc, char* argv[])
 
       t = time(NULL);
       curtime = localtime( &t );
-      std::wcout << asctime(curtime) << ": Done!" << std::endl;
+      std::wcout << asctime(curtime) << _XPLATSTR(": Done!") << std::endl;
     } 
     catch (const azure::storage::storage_exception& e) {
-        ucout << "Error: " << e.what() << std::endl;
+        ucout << _XPLATSTR("Error: ") << e.what() << std::endl;
 
         azure::storage::request_result result = e.result();
         azure::storage::storage_extended_error extended_error = result.extended_error();
@@ -313,7 +338,7 @@ int main(int argc, char* argv[])
             ucout << extended_error.message() << std::endl;
         }
     } catch (const std::exception& e) {
-        ucout << "Error: " << e.what() << std::endl;
+        ucout << _XPLATSTR("Error: ") << e.what() << std::endl;
     }
 
     return 0;
