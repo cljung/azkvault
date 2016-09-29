@@ -3,7 +3,8 @@ DEFS=-std=c++11 -fno-strict-aliasing -O3 -DNDEBUG
 STDLIBS=-lboost_system -lcrypto -lssl -lcpprest -luuid
 
 TARGET=azkvault
-ROOTDIR=/home/cljung/cpp
+PWD=$(shell pwd)
+ROOTDIR=$(shell dirname $(PWD))
 
 CASABLANCA_DIR=$(ROOTDIR)/casablanca/Release
 CASABLANCA_BINDIR=$(CASABLANCA_DIR)/build.release/Binaries
