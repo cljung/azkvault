@@ -46,6 +46,15 @@ ROOTDIR=$(shell dirname $(PWD))
 </pre>
 Depending on what you call the folders for your Casablanca and azure-storage-cpp builds you may need to change the CASABLANCA_BINDIR and the AZURECPP_BINDIR too. I called them build.release
 
+## Building the sample on Windows
+I've added my Visual Studio 2015 solution and project files that I actually used to build and test the code on Windows. If you are starting from scratch, this is how you do it:
+
+1. Create a VS2015 Win32 Console App project
+2. Type "Install-Package wastorage" in the NuGet command Window
+3. Add the include paths to header files for Casablanca and azure-storage-cpp
+4. Build the solution
+
+When you write code, keep in mind that Windows is a UNICODE world and that the compiler can get upset with you if you mix char/wchar code. It's especially nasty in the C++ 11 lambda stuff where it will complain about something in a standard header file. The error is not there but in your code in 101% of the cases.
 ## Running the sample
 Modify the config file and then run azkvault on the command line with either 1 or 3 arguments. Running it with one argument will just retrieve the secret and display it.
 <pre>
