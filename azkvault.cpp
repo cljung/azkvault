@@ -1,6 +1,13 @@
-// basic-http-client.cpp
-#include <iostream>
-#include <sstream>
+// Azure Key Vault simple C++ portable implementation 
+// see https://github.com/cljung/azkvault for details
+
+#include "was/storage_account.h"
+#include "was/blob.h"
+
+#include "cpprest/http_client.h"
+#include "cpprest/containerstream.h"
+#include "cpprest/filestream.h"
+
 #ifdef _WIN32
 #include <time.h>
 #include <objbase.h>
@@ -8,22 +15,6 @@
 #include <sys/time.h>
 #include <uuid/uuid.h>
 #endif
-
-#include "cpprest/details/basic_types.h"
-#include "cpprest/http_client.h"
-#include "cpprest/interopstream.h"
-#include "cpprest/containerstream.h"
-#include "cpprest/filestream.h"
-
-#include "wascore/util.h"
-#include "wascore/filestream.h"
-#include "was/common.h"
-#include "was/storage_account.h"
-#include "was/blob.h"
-
-using namespace web::http;
-using namespace web::http::client;
-using namespace concurrency::streams;
 
 // globals
 utility::string_t clientId = _XPLATSTR("");
@@ -53,6 +44,7 @@ class KeyVaultClient
     pplx::task<void> GetLoginUrl();    
     pplx::task<void> get_secret( utility::string_t secretName );
     utility::string_t NewGuid();
+    utility::string_t read_response_body( web::http::http_response response );
 
   public:
     pplx::task<void> Authenticate( utility::string_t& clientId, utility::string_t& clientSecret, utility::string_t& keyVaultName );
@@ -79,6 +71,22 @@ utility::string_t KeyVaultClient::NewGuid()
 	return guid;
 }
 //////////////////////////////////////////////////////////////////////////////
+//
+utility::string_t KeyVaultClient::read_response_body( web::http::http_response response )
+{
+  auto bodyStream = response.body();
+  concurrency::streams::stringstreambuf sb;
+  auto& target = sb.collection();
+  bodyStream.read_to_end(sb).get();
+#ifdef _WIN32 // Windows uses UNICODE but result is in UTF8, so we need to convert it
+  utility::string_t wtarget;
+  wtarget.assign( target.begin(), target.end() );
+  return wtarget;
+#else
+  return target;
+#endif
+}
+//////////////////////////////////////////////////////////////////////////////
 // Call Azure KeyVault REST API to retrieve a secret
 bool KeyVaultClient::GetSecretValue( utility::string_t secretName, web::json::value& secret )
 {
@@ -91,30 +99,22 @@ pplx::task<void> KeyVaultClient::get_secret( utility::string_t secretName )
     auto impl = this;
     // create the url path to query the keyvault secret
     utility::string_t url = _XPLATSTR("https://") + impl->keyVaultName + _XPLATSTR(".vault.azure.net/secrets/") + secretName + _XPLATSTR("?api-version=2015-06-01");
-    http_client client( url ); 
-    http_request request(methods::GET);
+    web::http::client::http_client client( url ); 
+    web::http::http_request request( web::http::methods::GET );
     request.headers().add(_XPLATSTR("Accept"), _XPLATSTR("application/json"));
     request.headers().add(_XPLATSTR("client-request-id"), NewGuid() );
     // add access token we got from authentication step
     request.headers().add(_XPLATSTR("Authorization"), impl->tokenType + _XPLATSTR(" ") + impl->accessToken );
     // Azure HTTP REST API call
-    return client.request(request).then([impl](http_response response)
+    return client.request(request).then([impl]( web::http::http_response response)
     {
       std::error_code err;
       impl->status_code = response.status_code();
       if ( impl->status_code == 200 ) {
-         auto bodyStream = response.body();
-#ifdef _WIN32
-         concurrency::streams::wstringstreambuf sbuffer;
-#else
-         concurrency::streams::stringstreambuf sbuffer;
-#endif
-         auto& target = sbuffer.collection();
-         bodyStream.read_to_end(sbuffer).get();
+         utility::string_t target = impl->read_response_body( response );
          impl->secret = web::json::value::parse( target.c_str(), err );
       } else {
-        utility::string_t empty = _XPLATSTR("{\"id\":\"\",\"value\":\"\"}");
-        impl->secret = web::json::value::parse( empty.c_str(), err );
+        impl->secret = web::json::value::parse( _XPLATSTR("{\"id\":\"\",\"value\":\"\"}"), err );
       }
     });
 }
@@ -149,10 +149,10 @@ pplx::task<void> KeyVaultClient::Authenticate( utility::string_t& clientId, util
 
     // create the oauth2 authentication request and pass the clientId/Secret as app identifiers
     utility::string_t url = impl->loginUrl + _XPLATSTR("/oauth2/token");
-    http_client client( url ); 
-    utility::string_t postData = _XPLATSTR("resource=") + uri::encode_uri( impl->resourceUrl ) + _XPLATSTR("&client_id=") + clientId
+    web::http::client::http_client client( url ); 
+    utility::string_t postData = _XPLATSTR("resource=") + web::uri::encode_uri( impl->resourceUrl ) + _XPLATSTR("&client_id=") + clientId
                                + _XPLATSTR("&client_secret=") + clientSecret + _XPLATSTR("&grant_type=client_credentials");
-    http_request request(methods::POST);
+    web::http::http_request request( web::http::methods::POST );
     request.headers().add(_XPLATSTR("Content-Type"), _XPLATSTR("application/x-www-form-urlencoded"));
     request.headers().add(_XPLATSTR("Accept"), _XPLATSTR("application/json"));
     request.headers().add(_XPLATSTR("return-client-request-id"), _XPLATSTR("true"));
@@ -160,18 +160,11 @@ pplx::task<void> KeyVaultClient::Authenticate( utility::string_t& clientId, util
     request.set_body( postData );
     // response from IDP is a JWT Token that contains the token type and access token we need for
     // Azure HTTP REST API calls
-    return client.request(request).then([impl](http_response response)
+    return client.request(request).then([impl]( web::http::http_response response )
     {
         impl->status_code = response.status_code();
         if ( impl->status_code == 200 ) {
-           auto bodyStream = response.body();
-#ifdef _WIN32
-           concurrency::streams::wstringstreambuf sbuffer;
-#else
-           concurrency::streams::stringstreambuf sbuffer;
-#endif
-           auto& target = sbuffer.collection();
-           bodyStream.read_to_end(sbuffer).get();
+           utility::string_t target = impl->read_response_body( response );
            std::error_code err;
            web::json::value jwtToken = web::json::value::parse( target.c_str(), err );
            if ( err.value() == 0 ) {
@@ -188,8 +181,8 @@ pplx::task<void> KeyVaultClient::GetLoginUrl()
 {
     auto impl = this;
     utility::string_t url = _XPLATSTR("https://") + impl->keyVaultName + _XPLATSTR(".vault.azure.net/secrets/secretname?api-version=2015-06-01");
-    http_client client( url ); 
-    return client.request(methods::GET).then([impl](http_response response)
+    web::http::client::http_client client( url ); 
+    return client.request( web::http::methods::GET ).then([impl]( web::http::http_response response )
     {
         impl->status_code = response.status_code();
         if ( impl->status_code == 401 ) {
@@ -250,7 +243,7 @@ void GetConfig(utility::string_t configFile)
 //////////////////////////////////////////////////////////////////////////////
 //
 #ifdef _WIN32
-int main(int argc, wchar_t* argv[])
+int wmain(int argc, wchar_t* argv[])
 #else
 int main(int argc, char* argv[])
 #endif
